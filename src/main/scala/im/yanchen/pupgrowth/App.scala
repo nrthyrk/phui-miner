@@ -12,6 +12,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.storage.StorageLevel._
 import org.apache.spark.rdd._
 import scala.util.Sorting
+//import org.apache.spark
 
 /**
  * @author Yan Chen
@@ -26,7 +27,7 @@ object App {
       breakable {
         for (i <- 0 to pnum - 1) {
           if (bins(i) == 0 || i == pnum - 1 || (bins(i) < avg && bins(i) + value <= 1.5 * avg)) {
-            println("############# assigning " + value + " to " + i + ", bin(i) = " + bins(i) + ", and avg = " + avg)
+            // println("############# assigning " + value + " to " + i + ", bin(i) = " + bins(i) + ", and avg = " + avg)
             mp(key) = i
             bins(i) += value
             break
@@ -94,13 +95,14 @@ object App {
       .toMap
 
     val glists = grouping(freqs.toArray, tnumn, parNum)
+    val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
       var writer = new BufferedWriter(new FileWriter(outputf))
       writer.write("The number of transactions is " + tnum + "\n")
       writer.write("glists are\n")
       for ((key, value) <- glists) {
-        writer.write("" + key + ": " + freqs(key) + ":" + value + "\n")
+        writer.write("" + key + ":" + freqs(key) + ":" + value + "\n")
       }
       writer.write("# of transactions in each node is\n")
       var nums = Map[Int, Int]()
@@ -117,7 +119,8 @@ object App {
       writer.close()
 
     } else if (method == 1) {
-
+      val kset = revisedTransacs.map( x => (glistsBroad.value(x.itemset.slice(0, depth).mkString(" ")), x) )
+      val gset = kset.groupByKey()
     } else {
       println("Warning: method not implemented!")
     }
