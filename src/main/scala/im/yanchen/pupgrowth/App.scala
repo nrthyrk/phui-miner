@@ -113,9 +113,9 @@ object App {
       
       kset = kset.partitionBy(new BinPartitioner(parNum))
       
-      for ((x, y) <- kset.collect()) {
-        println("DS: " + x + ", " + y.mkString(" "))
-      }
+//      for ((x, y) <- kset.collect()) {
+//        println("DS: " + x + ", " + y.mkString(" "))
+//      }
       
       val gset = kset.groupByKey()
       
@@ -143,12 +143,12 @@ object App {
         
         results = results
                   .filter(x => x._2 >= thresUtilBroad.value.toInt)
-        println("results: " + results.size)
-        println("up.phuis: " + up.phuis.size)
-        
-        for (y <- results) {
-          println("Node " + x._1 + ": " + y._1.mkString(" ") + ": " + y._2)
-        }
+//        println("results: " + results.size)
+//        println("up.phuis: " + up.phuis.size)
+//        
+//        for (y <- results) {
+//          println("Node " + x._1 + ": " + y._1.mkString(" ") + ": " + y._2)
+//        }
         results
       })
       
@@ -158,18 +158,20 @@ object App {
         }
         y
       })
-
-      for ((key, value) <- glists) {
-        println("" + key + ":" + value + "\n")
-      }
       
+      println("glists: ")
+      for ((key, value) <- glists) {
+        println("\t" + key + ": " + value)
+      }
       println("Thres: " + thresUtil.toInt)
       println("Total HUIs: " + fresults.size)
       
-      for ((key, value) <- fresults) {
-        println("" + key.mkString(" ") + ": " + value)
-      }
+      var writer = new BufferedWriter(new FileWriter(outputf))
       
+      for ((key, value) <- fresults) {
+        writer.write("" + key.mkString(" ") + ": " + value + "\n")
+      }
+      writer.close()
     } else {
       println("Warning: method not implemented!")
     }
