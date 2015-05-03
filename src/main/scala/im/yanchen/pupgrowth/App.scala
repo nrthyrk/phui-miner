@@ -11,7 +11,7 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 import org.apache.spark.storage.StorageLevel._
 import org.apache.spark.rdd._
-import scala.util.Sorting
+
 //import org.apache.spark
 
 /**
@@ -81,7 +81,7 @@ object App {
     val itemTwuBroad = sc.broadcast(itemTwu)
     val revisedTransacs = transacs.map(t => {
       t.itemset = t.itemset.filter(x => itemTwuBroad.value.get(x._1) != None)
-      Sorting.quickSort(t.itemset)(Ordering[(Int, Int)].on(x => (itemTwuBroad.value.get(x._1).get, x._1)))
+      Sorting.quickSort(t.itemset)(Ordering[(Int, Int)].on(x => (-itemTwuBroad.value.get(x._1).get, x._1)))
       t
     }).filter(x => x.itemset.size >= depth)
     revisedTransacs.persist()
@@ -119,12 +119,86 @@ object App {
       writer.close()
 
     } else if (method == 1) {
-      val kset = revisedTransacs.map( x => (glistsBroad.value(x.itemset.slice(0, depth).mkString(" ")), x) )
+      var kset = revisedTransacs.map( x => (glistsBroad.value(x.itemset.slice(0, depth).map(x => x._1).mkString(" ")), x) )
+      kset = kset.partitionBy(new BinPartitioner(parNum))
       val gset = kset.groupByKey()
+      val results = gset.map(x => {
+        var up = new UPGrowth()
+        for (transac <- x._2) {
+          println("================================")
+          up.addTransac(transac)
+        }
+        up.run(itemTwuBroad.value, thresUtilBroad.value.toInt)
+        up.phuis = up.phuis.sortBy { x => x.length }
+        var results = Map[Array[Int], Int]()
+        for (transac <- x._2) {
+          println("################################")
+          breakable {
+            for (itemset <- up.phuis) {
+              if (itemset.length > transac.length) {
+                break
+              }
+              
+              updateExactUtility(transac, itemset, itemTwu, results)
+              
+            }
+          }
+        }
+        println("results: " + results.size)
+        println("up.phuis: " + up.phuis.size)
+        
+        results = results
+                  .filter(x => x._2 >= thresUtilBroad.value.toInt)
+                  .filter(x => x._1.length >= depth)
+        results
+      })
+      
+      val fresults = results.reduce((x, y) => {
+        for ((key, value) <- x) {
+          y(key) = value
+        }
+        y
+      })
+      
+      println("Thres: " + thresUtil.toInt)
+      println("Total HUIs: " + fresults.size)
+      
+      for ((key, value) <- fresults) {
+        println("" + key.mkString(" ") + ": " + value)
+      }
+      
     } else {
       println("Warning: method not implemented!")
     }
 
+  }
+  
+  def updateExactUtility(transac: Transaction, itemset: Array[Int], mapItemToTWU: scala.collection.immutable.Map[Int, Int], results: Map[Array[Int], Int]) {
+    var utility = 0
+    
+    for (i <- 0 to itemset.length-1) {
+      breakable {
+        var itemI = itemset(i)
+        for (j <- 0 to transac.length-1) {
+          var itemJ = transac.itemset(j)
+          
+          if (itemJ._1 == itemI) {
+            utility += itemJ._2
+            break
+          } else if (mapItemToTWU(itemJ._1) < mapItemToTWU(itemI)) {
+            return
+          }
+          
+        }
+        return
+      }
+    }
+    
+    if (!results.contains(itemset)) {
+      results(itemset) = 0
+    }
+    results(itemset) += utility
+    
   }
 
 }
