@@ -14,11 +14,11 @@ class UPGrowth {
   
   var tree = new UPTree()
   
-  def addTransac(t: Transaction) {
+  def addTransac(t: Array[(Int, Int)]) {
     
     var remainingUtility = 0
     
-    for ((item, util) <- t.itemset) {
+    for ((item, util) <- t) {
       remainingUtility += util
       var minItemUtil = mapMinimumItemUtility.get(item)
       if (minItemUtil == None || minItemUtil.get >= util) {
@@ -31,7 +31,7 @@ class UPGrowth {
     tree.addTransaction(t, remainingUtility)
   }
   
-  def run(mapItemToTWU: scala.collection.immutable.Map[Int, Int], minUtility: Int) {
+  def run(mapItemToTWU: scala.collection.immutable.Map[Int, Int], minUtility: Int, glists: Map[Int, Int], gid: Int) {
     
     tree.root.print()
     
@@ -39,39 +39,41 @@ class UPGrowth {
     
     println(tree.headerList.mkString(" "))
     
-    upgrowth(tree, minUtility, new Array[Int](0), mapItemToTWU)
+    upgrowth(tree, minUtility, new Array[Int](0), mapItemToTWU, glists, gid)
     
     phuisCount = phuis.size
   }
   
-  def upgrowth(tree: UPTree, minUtility: Int, prefix: Array[Int], mapItemToTWU: scala.collection.immutable.Map[Int, Int]) {
+  def upgrowth(tree: UPTree, minUtility: Int, prefix: Array[Int], 
+                mapItemToTWU: scala.collection.immutable.Map[Int, Int], glists: Map[Int, Int], gid: Int) {
     for (i <- tree.headerList.size-1 to 0 by -1) {
-      
-      //println("#2 " )
       
       var item = tree.headerList(i)
       
-      var localTree = createLocalTree(minUtility, tree, item)
-      
-      var pathCPBOpt = tree.mapItemNodes.get(item)
-      
-      var pathCPBUtility = 0
-      while (pathCPBOpt != None && pathCPBOpt.get != null) {
-        pathCPBUtility += pathCPBOpt.get.nodeUtility
-        pathCPBOpt = Option(pathCPBOpt.get.nodeLink)
-      }
-      
-      if (pathCPBUtility >= minUtility) {
-        var newPrefix = new Array[Int](prefix.length + 1)
-        Array.copy(prefix, 0, newPrefix, 0, prefix.length)
-        newPrefix(prefix.length) = item
+      if (glists(item) == gid || prefix.length != 0) {
         
-        //println("#1: " + newPrefix.toString() )
+        var localTree = createLocalTree(minUtility, tree, item)
         
-        savePHUI(newPrefix, mapItemToTWU)
+        var pathCPBOpt = tree.mapItemNodes.get(item)
         
-        if (localTree.headerList.size > 0) {
-          upgrowth(localTree, minUtility, newPrefix, mapItemToTWU)
+        var pathCPBUtility = 0
+        while (pathCPBOpt != None && pathCPBOpt.get != null) {
+          pathCPBUtility += pathCPBOpt.get.nodeUtility
+          pathCPBOpt = Option(pathCPBOpt.get.nodeLink)
+        }
+        
+        if (pathCPBUtility >= minUtility) {
+          var newPrefix = new Array[Int](prefix.length + 1)
+          Array.copy(prefix, 0, newPrefix, 0, prefix.length)
+          newPrefix(prefix.length) = item
+          
+          //println("#1: " + newPrefix.toString() )
+          
+          savePHUI(newPrefix, mapItemToTWU)
+          
+          if (localTree.headerList.size > 0) {
+            upgrowth(localTree, minUtility, newPrefix, mapItemToTWU, glists, gid)
+          }
         }
       }
       

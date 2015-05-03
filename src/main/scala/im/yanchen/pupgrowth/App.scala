@@ -18,22 +18,17 @@ import org.apache.spark.rdd._
  * @author Yan Chen
  */
 object App {
-  def grouping(lists: Array[(String, Int)], tnum: Long, pnum: Int): Map[String, Int] = {
-    val avg = (tnum * 1.0 / pnum).toInt
-    var mp = Map[String, Int]()
-    var bins = Array.fill[Int](pnum)(0)
-    Sorting.quickSort(lists)(Ordering[Int].on(x => -x._2))
-    for ((key, value) <- lists) {
-      breakable {
-        for (i <- 0 to pnum - 1) {
-          if (bins(i) == 0 || i == pnum - 1 || (bins(i) < avg && bins(i) + value <= 1.5 * avg)) {
-            // println("############# assigning " + value + " to " + i + ", bin(i) = " + bins(i) + ", and avg = " + avg)
-            mp(key) = i
-            bins(i) += value
-            break
-          }
-        }
+  def grouping(itemTwu: scala.collection.immutable.Map[Int, Int], pnum: Int): Map[Int, Int] = {
+    val avg = (itemTwu.size * 1.0 / pnum).toInt
+    var mp = Map[Int, Int]()
+    var counter = Array.fill(pnum)(0)
+    var i = 0
+    for (x <- itemTwu.keySet) {
+      if (counter(i) > avg && i + 1 < pnum) {
+        i += 1
       }
+      mp(x) = i
+      counter(i) += 1
     }
     mp
   }
@@ -41,8 +36,8 @@ object App {
     val theta = args(1).toDouble
     val parNum = args(2).toInt
     val method = args(3).toInt // 0: print stats; 1: PUPGrowth
-    val depth = args(4).toInt // 2
-    val outputf = args(5)
+    //val depth = args(4).toInt // 2
+    val outputf = args(4)
 
     val conf = new SparkConf().setAppName("PUPGrowth")
       .set("spark.executor.memory", "11G")
@@ -83,18 +78,11 @@ object App {
       t.itemset = t.itemset.filter(x => itemTwuBroad.value.get(x._1) != None)
       Sorting.quickSort(t.itemset)(Ordering[(Int, Int)].on(x => (-itemTwuBroad.value.get(x._1).get, x._1)))
       t
-    }).filter(x => x.itemset.size >= depth)
+    }).filter(x => x.itemset.size >= 1)
     revisedTransacs.persist()
-    transacs.unpersist()
-    
-    val tnumn = revisedTransacs.count()
+    transacs.unpersist(false)
 
-    val freqs = revisedTransacs.map(x => (x.itemset.slice(0, depth).map(x => x._1).mkString(" "), 1))
-      .reduceByKey(_ + _)
-      .collect()
-      .toMap
-
-    val glists = grouping(freqs.toArray, tnumn, parNum)
+    val glists = grouping(itemTwu, parNum)
     val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
@@ -102,37 +90,45 @@ object App {
       writer.write("The number of transactions is " + tnum + "\n")
       writer.write("glists are\n")
       for ((key, value) <- glists) {
-        writer.write("" + key + ":" + freqs(key) + ":" + value + "\n")
-      }
-      writer.write("# of transactions in each node is\n")
-      var nums = Map[Int, Int]()
-      for ((key, value) <- glists) {
-        if (nums contains value) {
-          nums(value) += freqs(key)
-        } else {
-          nums(value) = freqs(key)
-        }
-      }
-      for ((key, value) <- nums) {
-        writer.write("" + key + ": " + value + "\n")
+        writer.write("" + key + ":" + value + "\n")
       }
       writer.close()
 
     } else if (method == 1) {
-      var kset = revisedTransacs.map( x => (glistsBroad.value(x.itemset.slice(0, depth).map(x => x._1).mkString(" ")), x) )
+      var kset = revisedTransacs.flatMap { x => {
+        var tlist = ArrayBuffer[(Int, Array[(Int, Int)])]()
+        var added = Map[Int, Boolean]()
+        for (i <- x.length-1 to 0 by -1) {
+          var lastitem = x.itemset(i)._1
+          var gid = glistsBroad.value(lastitem)
+          if (added.get(gid) == None) {
+            tlist.append((gid, x.itemset.slice(0, i+1)))
+            added(gid) = true
+          }
+        }
+        tlist.iterator
+      } }
+      kset.persist()
+      revisedTransacs.unpersist(false)
+      
       kset = kset.partitionBy(new BinPartitioner(parNum))
+      
+      for ((x, y) <- kset.collect()) {
+        println("DS: " + x + ", " + y.mkString(" "))
+      }
+      
       val gset = kset.groupByKey()
+      
       val results = gset.map(x => {
         var up = new UPGrowth()
         for (transac <- x._2) {
-          println("================================")
           up.addTransac(transac)
         }
-        up.run(itemTwuBroad.value, thresUtilBroad.value.toInt)
+        
+        up.run(itemTwuBroad.value, thresUtilBroad.value.toInt, glistsBroad.value, x._1)
         up.phuis = up.phuis.sortBy { x => x.length }
         var results = Map[Array[Int], Int]()
         for (transac <- x._2) {
-          println("################################")
           breakable {
             for (itemset <- up.phuis) {
               if (itemset.length > transac.length) {
@@ -144,12 +140,15 @@ object App {
             }
           }
         }
-        println("results: " + results.size)
-        println("up.phuis: " + up.phuis.size)
         
         results = results
                   .filter(x => x._2 >= thresUtilBroad.value.toInt)
-                  .filter(x => x._1.length >= depth)
+        println("results: " + results.size)
+        println("up.phuis: " + up.phuis.size)
+        
+        for (y <- results) {
+          println("Node " + x._1 + ": " + y._1.mkString(" ") + ": " + y._2)
+        }
         results
       })
       
@@ -159,6 +158,10 @@ object App {
         }
         y
       })
+
+      for ((key, value) <- glists) {
+        println("" + key + ":" + value + "\n")
+      }
       
       println("Thres: " + thresUtil.toInt)
       println("Total HUIs: " + fresults.size)
@@ -173,14 +176,14 @@ object App {
 
   }
   
-  def updateExactUtility(transac: Transaction, itemset: Array[Int], mapItemToTWU: scala.collection.immutable.Map[Int, Int], results: Map[Array[Int], Int]) {
+  def updateExactUtility(transac: Array[(Int, Int)], itemset: Array[Int], mapItemToTWU: scala.collection.immutable.Map[Int, Int], results: Map[Array[Int], Int]) {
     var utility = 0
     
     for (i <- 0 to itemset.length-1) {
       breakable {
         var itemI = itemset(i)
         for (j <- 0 to transac.length-1) {
-          var itemJ = transac.itemset(j)
+          var itemJ = transac(j)
           
           if (itemJ._1 == itemI) {
             utility += itemJ._2

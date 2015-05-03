@@ -14,17 +14,17 @@ class UPTree {
   
   var mapItemLastNode = Map[Int, UPNode]()
   
-  def addTransaction(t: Transaction, rtu: Int) {
+  def addTransaction(t: Array[(Int, Int)], rtu: Int) {
     var currNode = root
     //var i = 0
     var ru = 0
-    var size = t.itemset.size
+    var size = t.size
     
     for (i <- 0 to size-1) {
-      for (k <- i+1 to t.itemset.size-1) {
-        ru += t.itemset(k)._2
+      for (k <- i+1 to t.size-1) {
+        ru += t(k)._2
       }
-      var item = t.itemset(i)._1
+      var item = t(i)._1
       var child = currNode.getChildWithID(item)
       
       if (child == null) {
