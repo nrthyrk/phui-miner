@@ -26,14 +26,10 @@ class UPGrowth {
       }
     }
     
-    //println(t.itemset.mkString(" "))
-    
     tree.addTransaction(t, remainingUtility)
   }
   
   def run(mapItemToTWU: scala.collection.immutable.Map[Int, Int], minUtility: Int, glists: Map[Int, Int], gid: Int) {
-    
-    tree.root.print()
     
     tree.createHeaderList(mapItemToTWU)
     

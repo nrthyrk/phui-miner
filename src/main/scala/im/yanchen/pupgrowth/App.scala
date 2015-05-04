@@ -40,7 +40,7 @@ object App {
     val outputf = args(4)
 
     val conf = new SparkConf().setAppName("PUPGrowth")
-      .set("spark.executor.memory", "11G")
+      .set("spark.executor.memory", "28G")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.kryo.registrator", "im.yanchen.pupgrowth.ARegistrator")
       .set("spark.kryoserializer.buffer.mb", "24")
@@ -113,10 +113,6 @@ object App {
       
       kset = kset.partitionBy(new BinPartitioner(parNum))
       
-//      for ((x, y) <- kset.collect()) {
-//        println("DS: " + x + ", " + y.mkString(" "))
-//      }
-      
       val gset = kset.groupByKey()
       
       val results = gset.map(x => {
@@ -143,12 +139,6 @@ object App {
         
         results = results
                   .filter(x => x._2 >= thresUtilBroad.value.toInt)
-//        println("results: " + results.size)
-//        println("up.phuis: " + up.phuis.size)
-//        
-//        for (y <- results) {
-//          println("Node " + x._1 + ": " + y._1.mkString(" ") + ": " + y._2)
-//        }
         results
       })
       
