@@ -13,8 +13,6 @@ class HUIMiner private () {
   var tid = 0
 
   var results = ArrayBuffer[(String, Double)]()
-
-  var utotal = 0
   
   var candidateCount: Int = 0
   
@@ -36,20 +34,19 @@ class HUIMiner private () {
     }
   }
 
-  def addTransac(t: Transaction) {
+  def addTransac(t: Array[(Int, Int)]) {
     // construct first UtilList
-    utotal += t.utility
     var remainingUtility: Int = 0
     var newTWU = 0
-    for(i <- 0 until t.itemset.length) {
-      var pair = t.itemset(i)
+    for(i <- 0 until t.length) {
+      var pair = t(i)
       // add it
       remainingUtility += pair._2
       newTWU += pair._2
     }
     
-    for (i <- 0 until t.itemset.size) {
-      val (key, value) = t.itemset(i)
+    for (i <- 0 until t.size) {
+      val (key, value) = t(i)
       remainingUtility -= value
       var ul: UtilList = mapItemToUls(key)
       ul.addElement(tid, value, remainingUtility)
@@ -66,8 +63,8 @@ class HUIMiner private () {
         mapFMAPItem = mapFMAPItemOpt.get
       }
       
-      for (j <- i+1 until t.itemset.size) {
-        var pairAfter = t.itemset(j)
+      for (j <- i+1 until t.size) {
+        var pairAfter = t(j)
         var twuSumOpt = mapFMAPItem.get(pairAfter._1)
         if (twuSumOpt.isEmpty) {
           mapFMAPItem.put(pairAfter._1, newTWU)
@@ -80,72 +77,71 @@ class HUIMiner private () {
     tid += 1
   }
 
-  def mine(thres: Double): Iterator[(String, Double)] = {
+  def mine(thresUtil: Int, glists: Map[List[Int], Int], gid: Int, depth: Int): Iterator[(String, Double)] = {
 
-    var thresUtil = (thres * utotal).toInt
-    
-    huiMiner(new Array[Int](0), null, uls, thresUtil)
+    huiMiner(new Array[Int](0), null, uls, thresUtil, glists, gid, depth)
     
     results.iterator
   }
   
-  def huiMiner(prefix: Array[Int], pUL: UtilList, ULs: ArrayBuffer[UtilList], minUtility: Int) {
+  def huiMiner(prefix: Array[Int], pUL: UtilList, 
+      ULs: ArrayBuffer[UtilList], minUtility: Int, 
+      glists: Map[List[Int], Int], gid: Int, depth: Int) {
     // For each extension X of prefix P
     
-    if (prefix.length == 1 || prefix.length == 0) {
-      println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX " + ULs.size)
-    }
-    
     for(i <- 0 until ULs.size){
-      var X = ULs(i)
-
-      // If pX is a high utility itemset.
-      // we save the itemset:  pX 
-      if(X.iutilSum >= minUtility){
-        // save to arraybuffer
-        //writeOut(prefix, X.item, X.iutilSum);
-        results.append((prefix.mkString(" ") + " " + X.item, X.iutilSum * 1.0 / utotal))
-      }
       
-      // If the sum of the remaining utilities for pX
-      // is higher than minUtility, we explore extensions of pX.
-      // (this is the pruning condition)
-      if(X.iutilSum + X.rutilSum >= minUtility){
-        // This list will contain the utility lists of pX extensions.
-        var exULs = new ArrayBuffer[UtilList]()
-        // For each extension of p appearing
-        // after X according to the ascending order
-        for(j <- i+1 until ULs.size){
-          breakable {
-            var Y = ULs(j)
-            
-            // NEW
-            
-            var mapTWUFOpt = mapFMAP.get(X.item)
-            
-            if (!mapTWUFOpt.isEmpty) {
-              var twuFOpt = mapTWUFOpt.get.get(Y.item)
-              if (!twuFOpt.isEmpty && twuFOpt.get < minUtility) {
-                break
-              }
-            }
-            
-            candidateCount += 1
-            
-            // END NEW
-            
-            // we construct the extension pXY 
-            // and add it to the list of extensions of pX
-            exULs.append(AUtil.construct(pUL, X, Y))
-          }
+      var X = ULs(i)
+      
+      if (prefix.length != depth-1 || glists(prefix.toList :+ X.item) == gid) {
+        // If pX is a high utility itemset.
+        // we save the itemset:  pX 
+        if(X.iutilSum >= minUtility){
+          // save to arraybuffer
+          //writeOut(prefix, X.item, X.iutilSum);
+          results.append((prefix.mkString(" ") + (if (prefix.isEmpty) "" else " ") + X.item, X.iutilSum))
         }
-        // We create new prefix pX
-        var newPrefix = new Array[Int](prefix.length+1)
-        System.arraycopy(prefix, 0, newPrefix, 0, prefix.length)
-        newPrefix(prefix.length) = X.item
         
-        // We make a recursive call to discover all itemsets with the prefix pXY
-        huiMiner(newPrefix, X, exULs, minUtility); 
+        // If the sum of the remaining utilities for pX
+        // is higher than minUtility, we explore extensions of pX.
+        // (this is the pruning condition)
+        if(X.iutilSum + X.rutilSum >= minUtility){
+          // This list will contain the utility lists of pX extensions.
+          var exULs = new ArrayBuffer[UtilList]()
+          // For each extension of p appearing
+          // after X according to the ascending order
+          for(j <- i+1 until ULs.size){
+            breakable {
+              var Y = ULs(j)
+              
+              // NEW
+              
+              var mapTWUFOpt = mapFMAP.get(X.item)
+              
+              if (!mapTWUFOpt.isEmpty) {
+                var twuFOpt = mapTWUFOpt.get.get(Y.item)
+                if (!twuFOpt.isEmpty && twuFOpt.get < minUtility) {
+                  break
+                }
+              }
+              
+              candidateCount += 1
+              
+              // END NEW
+              
+              // we construct the extension pXY 
+              // and add it to the list of extensions of pX
+              exULs.append(AUtil.construct(pUL, X, Y))
+            }
+          }
+          // We create new prefix pX
+          var newPrefix = new Array[Int](prefix.length+1)
+          System.arraycopy(prefix, 0, newPrefix, 0, prefix.length)
+          newPrefix(prefix.length) = X.item
+          
+          // We make a recursive call to discover all itemsets with the prefix pXY
+          huiMiner(newPrefix, X, exULs, minUtility, glists, gid, depth)
+        }
       }
     }
   }

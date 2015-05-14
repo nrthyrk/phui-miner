@@ -11,6 +11,9 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 import org.apache.spark.storage.StorageLevel._
 import org.apache.spark.rdd._
+import org.paukov.combinatorics._
+import org.paukov.combinatorics.combination.simple._
+import scala.collection.JavaConverters._
 
 //import org.apache.spark
 
@@ -18,29 +21,77 @@ import org.apache.spark.rdd._
  * @author Yan Chen
  */
 object App {
-  def grouping(itemTwu: scala.collection.immutable.Map[Int, Int], pnum: Int): Map[Int, Int] = {
-    val avg = (itemTwu.size * 1.0 / pnum).toInt
-    var mp = Map[Int, Int]()
-    var counter = Array.fill(pnum)(0)
+  def grouping(items: List[Int], pnum: Int, depth: Int): Map[List[Int], Int] = {
+    var initVec = Factory.createVector(items.asJava)
+    var gen = Factory.createSimpleCombinationGenerator(initVec, depth).asScala.iterator;
+    
+    var mp = Map[List[Int], Int]()
+    
     var i = 0
-    for (x <- itemTwu.keySet) {
-      if (counter(i) > avg && i + 1 < pnum) {
-        i += 1
+    var inc = 1
+    while (gen.hasNext) {
+      var combination = gen.next()
+      mp.put(combination.getVector.asScala.toList, i)
+      i += inc
+      if (i == 0 || i == pnum-1) {
+        inc *= -1
+        if (gen.hasNext) {
+          var combination1 = gen.next()
+          mp.put(combination1.getVector.asScala.toList, i)
+        }
       }
-      mp(x) = i
-      counter(i) += 1
     }
+//    for (x <- items) {
+//      mp.put(List(x), i)
+//      i += inc
+//      if (i == 0 || i == pnum-1) {
+//        inc *= -1
+//      }
+//    }
     mp
   }
+  
+  def grouping2(itemTwu: scala.collection.immutable.Map[Int, Int], pnum: Int): Map[Int, Int] = {
+    
+    
+    
+    var sortedItemTwu = itemTwu.toList.sortBy(_._2)
+    
+//    val avg = (Math.pow(2, sortedItemTwu.length) - 1) / pnum
+    var mp = Map[Int, Int]()
+//    var counter = Array.fill(pnum)(0.0)
+//    for (x <- itemTwu.keySet) {
+//      if (counter(i) > avg && i + 1 < pnum) {
+//        i += 1
+//      }
+//      mp(x) = i
+//      counter(i) += 1
+//    }
+    
+    for (i <- 0 to sortedItemTwu.length-1) {
+      if (i < pnum-1) {
+        mp(sortedItemTwu(i)._1) = i
+      } else {
+        mp(sortedItemTwu(i)._1) = pnum-1
+      }
+    }
+    
+    
+    mp
+  }
+  
   def main(args: Array[String]) {
+    
+    var startTimestamp = System.currentTimeMillis()
+    
     val theta = args(1).toDouble
     val parNum = args(2).toInt
     val method = args(3).toInt // 0: print stats; 1: PUPGrowth
-    //val depth = args(4).toInt // 2
-    val outputf = args(4)
+    val depth = args(4).toInt // 2
+    val outputf = args(5)
 
     val conf = new SparkConf().setAppName("PUPGrowth")
-      .set("spark.executor.memory", "28G")
+      .set("spark.executor.memory", "11G")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.kryo.registrator", "im.yanchen.pupgrowth.ARegistrator")
       .set("spark.kryoserializer.buffer.mb", "24")
@@ -76,35 +127,48 @@ object App {
     val itemTwuBroad = sc.broadcast(itemTwu)
     val revisedTransacs = transacs.map(t => {
       t.itemset = t.itemset.filter(x => itemTwuBroad.value.get(x._1) != None)
-      Sorting.quickSort(t.itemset)(Ordering[(Int, Int)].on(x => (-itemTwuBroad.value.get(x._1).get, x._1)))
+      Sorting.quickSort(t.itemset)(Ordering[(Int, Int)].on(x => (itemTwuBroad.value.get(x._1).get, x._1)))
       t
     }).filter(x => x.itemset.size >= 1)
     revisedTransacs.persist()
     transacs.unpersist(false)
+    
+    val items = itemTwu.toList.sortBy(x => x._2).map(x => x._1)
 
-    val glists = grouping(itemTwu, parNum)
+    val glists = grouping(items, parNum, depth)
     val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
       var writer = new BufferedWriter(new FileWriter(outputf))
       writer.write("The number of transactions is " + tnum + "\n")
+      writer.write("items list: " + items.mkString(" ") + "\n")
       writer.write("glists are\n")
       for ((key, value) <- glists) {
-        writer.write("" + key + ":" + value + "\n")
+        writer.write("" + key.mkString(" ") + ":" + value + "\n")
       }
       writer.close()
 
     } else if (method == 1) {
       var kset = revisedTransacs.flatMap { x => {
         var tlist = ArrayBuffer[(Int, Array[(Int, Int)])]()
-        var added = Map[Int, Boolean]()
-        for (i <- x.length-1 to 0 by -1) {
-          var lastitem = x.itemset(i)._1
-          var gid = glistsBroad.value(lastitem)
-          if (added.get(gid) == None) {
-            tlist.append((gid, x.itemset.slice(0, i+1)))
-            added(gid) = true
-          }
+//        var added = Map[Int, Boolean]()
+//        for (i <- 0 to x.length-1) {
+//          var firstitem = x.itemset(i)._1
+//          var gid = glistsBroad.value(Array(firstitem))
+//          if (added.get(gid) == None) {
+//            tlist.append((gid, x.itemset.slice(i, x.length)))
+//            added(gid) = true
+//          }
+//          if (x.length - i >= depth) {
+//            gid = glistsBroad.value(x.itemset.slice(i, i+depth).map(x => x._1))
+//            if (added.get(gid) == None) {
+//              tlist.append((gid, x.itemset.slice(i, x.length)))
+//              added(gid) = true
+//            }
+//          }
+//        }
+        for (i <- 0 to parNum-1) {
+          tlist.append((i, x.itemset))
         }
         tlist.iterator
       } }
@@ -115,51 +179,31 @@ object App {
       
       val gset = kset.groupByKey()
       
-      val results = gset.map(x => {
-        var up = new UPGrowth()
+      val results = gset.flatMap(x => {
+        var hm = new HUIMiner(itemTwuBroad.value)
         for (transac <- x._2) {
-          up.addTransac(transac)
+          hm.addTransac(transac)
         }
         
-        up.run(itemTwuBroad.value, thresUtilBroad.value.toInt, glistsBroad.value, x._1)
-        up.phuis = up.phuis.sortBy { x => x.length }
-        var results = Map[Array[Int], Int]()
-        for (transac <- x._2) {
-          breakable {
-            for (itemset <- up.phuis) {
-              if (itemset.length > transac.length) {
-                break
-              }
-              
-              updateExactUtility(transac, itemset, itemTwu, results)
-              
-            }
-          }
-        }
-        
-        results = results
-                  .filter(x => x._2 >= thresUtilBroad.value.toInt)
-        results
+        hm.mine(thresUtilBroad.value.toInt, glistsBroad.value, x._1, depth)
       })
       
-      val fresults = results.reduce((x, y) => {
-        for ((key, value) <- x) {
-          y(key) = value
-        }
-        y
-      })
+      val fresults = results.collect().toMap
       
+      var endTimestamp = System.currentTimeMillis()
+
       println("glists: ")
       for ((key, value) <- glists) {
         println("\t" + key + ": " + value)
       }
       println("Thres: " + thresUtil.toInt)
       println("Total HUIs: " + fresults.size)
+      println("Running time: " + (endTimestamp - startTimestamp))
       
       var writer = new BufferedWriter(new FileWriter(outputf))
       
       for ((key, value) <- fresults) {
-        writer.write("" + key.mkString(" ") + ": " + value + "\n")
+        writer.write("" + key + ": " + value + "\n")
       }
       writer.close()
     } else {
