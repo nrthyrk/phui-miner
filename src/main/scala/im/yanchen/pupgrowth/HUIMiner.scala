@@ -77,23 +77,23 @@ class HUIMiner private () {
     tid += 1
   }
 
-  def mine(thresUtil: Int, glists: Map[List[Int], Int], gid: Int, depth: Int): Iterator[(String, Double)] = {
+  def mine(thresUtil: Int, glists: Map[Int, Int], gid: Int): Iterator[(String, Double)] = {
 
-    huiMiner(new Array[Int](0), null, uls, thresUtil, glists, gid, depth)
+    huiMiner(new Array[Int](0), null, uls, thresUtil, glists, gid)
     
     results.iterator
   }
   
   def huiMiner(prefix: Array[Int], pUL: UtilList, 
       ULs: ArrayBuffer[UtilList], minUtility: Int, 
-      glists: Map[List[Int], Int], gid: Int, depth: Int) {
+      glists: Map[Int, Int], gid: Int) {
     // For each extension X of prefix P
     
     for(i <- 0 until ULs.size){
       
       var X = ULs(i)
       
-      if (prefix.length != depth-1 || glists(prefix.toList :+ X.item) == gid) {
+      if (prefix.length != 0 || glists(X.item) == gid) {
         // If pX is a high utility itemset.
         // we save the itemset:  pX 
         if(X.iutilSum >= minUtility){
@@ -140,7 +140,7 @@ class HUIMiner private () {
           newPrefix(prefix.length) = X.item
           
           // We make a recursive call to discover all itemsets with the prefix pXY
-          huiMiner(newPrefix, X, exULs, minUtility, glists, gid, depth)
+          huiMiner(newPrefix, X, exULs, minUtility, glists, gid)
         }
       }
     }

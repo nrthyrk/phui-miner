@@ -11,43 +11,35 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 import org.apache.spark.storage.StorageLevel._
 import org.apache.spark.rdd._
-import org.paukov.combinatorics._
-import org.paukov.combinatorics.combination.simple._
-import scala.collection.JavaConverters._
-
-//import org.apache.spark
 
 /**
  * @author Yan Chen
  */
 object App {
-  def grouping(items: List[Int], pnum: Int, depth: Int): Map[List[Int], Int] = {
-    var initVec = Factory.createVector(items.asJava)
-    var gen = Factory.createSimpleCombinationGenerator(initVec, depth).asScala.iterator;
+  def grouping(items: List[Int], pnum: Int): Map[Int, Int] = {
     
-    var mp = Map[List[Int], Int]()
+    var mp = Map[Int, Int]()
     
     var i = 0
     var inc = 1
-    while (gen.hasNext) {
-      var combination = gen.next()
-      mp.put(combination.getVector.asScala.toList, i)
+    var flag = false
+    for (x <- items) {
+      mp.put(x, i)
       i += inc
       if (i == 0 || i == pnum-1) {
-        inc *= -1
-        if (gen.hasNext) {
-          var combination1 = gen.next()
-          mp.put(combination1.getVector.asScala.toList, i)
+        if (flag == false) {
+          inc = 0
+          flag = true
+        } else {
+          if (i == 0)
+            inc = 1
+          else
+            inc = -1
+          flag = false
         }
       }
     }
-//    for (x <- items) {
-//      mp.put(List(x), i)
-//      i += inc
-//      if (i == 0 || i == pnum-1) {
-//        inc *= -1
-//      }
-//    }
+    
     mp
   }
   
@@ -86,19 +78,22 @@ object App {
     
     val theta = args(1).toDouble
     val parNum = args(2).toInt
-    val method = args(3).toInt // 0: print stats; 1: PUPGrowth
-    val depth = args(4).toInt // 2
+    val method = args(3).toInt // 0: print stats; 1: PUPGrowth; 2: PUPGrowth with sampling
+    val sperc = args(4).toDouble // sample size
     val outputf = args(5)
 
     val conf = new SparkConf().setAppName("PUPGrowth")
-      .set("spark.executor.memory", "11G")
+      .set("spark.executor.memory", "28G")
       .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .set("spark.kryo.registrator", "im.yanchen.pupgrowth.ARegistrator")
       .set("spark.kryoserializer.buffer.mb", "24")
       .set("spark.storage.blockManagerHeartBeatMs", "30000000")
     val sc = new SparkContext(conf)
 
-    val lines = sc.textFile(args(0)).repartition(parNum)
+    var lines = sc.textFile(args(0)).repartition(parNum)
+    if (method == 2) {
+      lines = lines.sample(false, sperc, 0)
+    }
     val transacs = lines.map(s => new Transaction(s))
     transacs.persist()
 
@@ -135,7 +130,7 @@ object App {
     
     val items = itemTwu.toList.sortBy(x => x._2).map(x => x._1)
 
-    val glists = grouping(items, parNum, depth)
+    val glists = grouping(items, parNum)
     val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
@@ -144,31 +139,21 @@ object App {
       writer.write("items list: " + items.mkString(" ") + "\n")
       writer.write("glists are\n")
       for ((key, value) <- glists) {
-        writer.write("" + key.mkString(" ") + ":" + value + "\n")
+        writer.write("" + key + ":" + value + "\n")
       }
       writer.close()
 
-    } else if (method == 1) {
+    } else if (method == 1 || method == 2) {
       var kset = revisedTransacs.flatMap { x => {
         var tlist = ArrayBuffer[(Int, Array[(Int, Int)])]()
-//        var added = Map[Int, Boolean]()
-//        for (i <- 0 to x.length-1) {
-//          var firstitem = x.itemset(i)._1
-//          var gid = glistsBroad.value(Array(firstitem))
-//          if (added.get(gid) == None) {
-//            tlist.append((gid, x.itemset.slice(i, x.length)))
-//            added(gid) = true
-//          }
-//          if (x.length - i >= depth) {
-//            gid = glistsBroad.value(x.itemset.slice(i, i+depth).map(x => x._1))
-//            if (added.get(gid) == None) {
-//              tlist.append((gid, x.itemset.slice(i, x.length)))
-//              added(gid) = true
-//            }
-//          }
-//        }
-        for (i <- 0 to parNum-1) {
-          tlist.append((i, x.itemset))
+        var added = Map[Int, Boolean]()
+        for (i <- 0 to x.length-1) {
+          var firstitem = x.itemset(i)._1
+          var gid = glistsBroad.value(firstitem)
+          if (added.get(gid) == None) {
+            tlist.append((gid, x.itemset.slice(i, x.length)))
+            added(gid) = true
+          }
         }
         tlist.iterator
       } }
@@ -185,7 +170,7 @@ object App {
           hm.addTransac(transac)
         }
         
-        hm.mine(thresUtilBroad.value.toInt, glistsBroad.value, x._1, depth)
+        hm.mine(thresUtilBroad.value.toInt, glistsBroad.value, x._1)
       })
       
       val fresults = results.collect().toMap
