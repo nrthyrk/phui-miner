@@ -43,32 +43,14 @@ object App {
     mp
   }
   
-  def grouping2(itemTwu: scala.collection.immutable.Map[Int, Int], pnum: Int): Map[Int, Int] = {
+  def grouping2(items: List[Int], pnum: Int): Map[Int, Int] = {
     
-    
-    
-    var sortedItemTwu = itemTwu.toList.sortBy(_._2)
-    
-//    val avg = (Math.pow(2, sortedItemTwu.length) - 1) / pnum
     var mp = Map[Int, Int]()
-//    var counter = Array.fill(pnum)(0.0)
-//    for (x <- itemTwu.keySet) {
-//      if (counter(i) > avg && i + 1 < pnum) {
-//        i += 1
-//      }
-//      mp(x) = i
-//      counter(i) += 1
-//    }
+    val r = scala.util.Random
     
-    for (i <- 0 to sortedItemTwu.length-1) {
-      if (i < pnum-1) {
-        mp(sortedItemTwu(i)._1) = i
-      } else {
-        mp(sortedItemTwu(i)._1) = pnum-1
-      }
+    for (x <- items) {
+      mp.put(x, r.nextInt(pnum))
     }
-    
-    
     mp
   }
   
@@ -130,7 +112,7 @@ object App {
     
     val items = itemTwu.toList.sortBy(x => x._2).map(x => x._1)
 
-    val glists = grouping(items, parNum)
+    val glists = grouping2(items, parNum)
     val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
@@ -177,18 +159,22 @@ object App {
       
       var endTimestamp = System.currentTimeMillis()
 
-      println("glists: ")
-      for ((key, value) <- glists) {
-        println("\t" + key + ": " + value)
-      }
+//      println("glists: ")
+//      for ((key, value) <- glists) {
+//        println("\t" + key + ": " + value)
+//      }
       println("Thres: " + thresUtil.toInt)
       println("Total HUIs: " + fresults.size)
       println("Running time: " + (endTimestamp - startTimestamp))
       
       var writer = new BufferedWriter(new FileWriter(outputf))
       
+      writer.write("" + utotal + "\n")
+      writer.write("" + thresUtil.toInt + "\n")
+      writer.write("\n\n\n\n\n")
+      
       for ((key, value) <- fresults) {
-        writer.write("" + key + ": " + value + "\n")
+        writer.write("" + key + "#UTIL: " + value + "\n")
       }
       writer.close()
     } else {

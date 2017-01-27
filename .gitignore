@@ -6,3 +6,5 @@ pom.xml.next
 release.properties
 .DS_Store
 .cache
+.idea/
+.iml
