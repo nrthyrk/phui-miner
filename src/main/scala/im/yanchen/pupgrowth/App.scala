@@ -112,7 +112,7 @@ object App {
     
     val items = itemTwu.toList.sortBy(x => x._2).map(x => x._1)
 
-    val glists = grouping2(items, parNum)
+    val glists = grouping(items, parNum)
     val glistsBroad = sc.broadcast(glists)
 
     if (method == 0) {
