@@ -6,3 +6,4 @@ Please cite *PHUI-Miner* as follows:
 
 Y. Chen and A. An, [Approximate Parallel High Utility Itemset Mining](http://www.sciencedirect.com/science/article/pii/S2214579616300089), *Big Data Research*, vol. 6, Dec. 2016, pp. 26-42.
 
+*Note: PUPGrowth in the code was the original name we used for PHUI-Miner.*
